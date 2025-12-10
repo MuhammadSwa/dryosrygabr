@@ -1,365 +1,229 @@
-## Cache-Busting Strategy - How It Works
+# Deployment & Data Sync
 
-1. **Sync Script Updates Timestamp**
-   ```typescript
-   // scripts/sync.ts
-   const newState: SyncState = {
-     lastSync: new Date().toISOString(),  // e.g., "2025-12-06T15:30:00Z"
-     videoCount: allVideos.length,
-     // ...
-   }
-   writeJson("public/data/_sync.json", newState)
-   ```
+This project uses a unified CI/CD pipeline that handles both YouTube data synchronization and GitHub Pages deployment.
 
-2. **App Fetches Version on Load**
-   ```typescript
-   // src/lib/staticData.ts
-   async function getDataVersion(): Promise<string> {
-     // Always fetch _sync.json fresh (bypasses cache)
-     const url = `${basePath}/data/_sync.json?_=${Date.now()}`
-     const res = await fetch(url)
-     const data = await res.json()
-     
-     // Convert lastSync to timestamp
-     return new Date(data.lastSync).getTime().toString()
-   }
-   ```
-
-3. **All JSON Requests Use Version**
-   ```typescript
-   // Append version to all data requests
-   const version = await getDataVersion()
-   fetch(`/data/index.json?v=${version}`)
-   fetch(`/data/videos/date/page-1.json?v=${version}`)
-   ```
-
-#### Example Timeline
+## Architecture Overview
 
 ```
-10:00 AM - Sync #1
-├── _sync.json: { lastSync: "2025-12-06T10:00:00Z" }
-├── Version: 1733486400000
-└── Browser fetches: index.json?v=1733486400000
-
-1:00 PM - Sync #2 (new videos found!)
-├── _sync.json: { lastSync: "2025-12-06T13:00:00Z" }
-├── Version: 1733497200000  ← Changed!
-└── Browser fetches: index.json?v=1733497200000  ← Fresh data!
-
-4:00 PM - Sync #3 (no changes)
-├── _sync.json: { lastSync: "2025-12-06T16:00:00Z" }
-├── Version: 1733508000000  ← Still changes
-└── Browser re-validates and gets 304 Not Modified if no actual changes
-```
----
-
-## Workflows
-
-### 1. Sync YouTube Data (`sync-youtube.yml`)
-```yaml
-┌─────────────────────────────────────────────────────────┐
-│ 1. Checkout main branch                                 │
-│ 2. Setup Node.js + pnpm                                 │
-│ 3. Install dependencies                                 │
-│ 4. Run sync script (YOUTUBE_API_KEY from secrets)      │
-│ 5. Check if data changed                                │
-│    ├─ No changes → Stop ✓                               │
-│    └─ Changes detected → Continue                       │
-│ 6. Build static site (pnpm build)                       │
-│ 7. Add .nojekyll to disable Jekyll                      │
-│ 8. Deploy to gh-pages branch                            │
-│    ├─ force_orphan: true (clean history)                │
-│    └─ enable_jekyll: false                              │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                     GitHub Actions CI/CD                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐    │
+│  │ Data Cache   │────▶│   Build      │────▶│   Deploy     │    │
+│  │ (persistent) │     │   (Vite)     │     │   (Pages)    │    │
+│  └──────────────┘     └──────────────┘     └──────────────┘    │
+│         │                                         │              │
+│         ▼                                         ▼              │
+│  ┌──────────────┐                        ┌──────────────┐       │
+│  │ YouTube API  │                        │ GitHub Pages │       │
+│  │ (sync)       │                        │ (artifact)   │       │
+│  └──────────────┘                        └──────────────┘       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**Important Notes:**
-- Does NOT commit to `main` branch (keeps it clean!)
-- Only deploys if data actually changed
-- Uses incremental sync when possible (faster)
-- Full sync if playlists changed or first run
+## Key Features
 
-### 2. Build and Deploy (`deploy.yml`)
-**Process:**
-```yaml
-┌─────────────────────────────────────────────────────────┐
-│ 1. Checkout main branch                                 │
-│ 2. Setup Node.js + pnpm                                 │
-│ 3. Install dependencies                                 │
-│ 4. Build static site (SKIP_SYNC=true)                   │
-│ 5. Prepare for deployment                               │
-│    ├─ Add .nojekyll                                     │
-│    ├─ Create /study/index.html (SPA fallback)           │
-│    ├─ Create /dashboard/index.html (SPA fallback)       │
-│    └─ Create 404.html                                   │
-│ 6. Deploy to gh-pages branch                            │
-└─────────────────────────────────────────────────────────┘
-```
-## Development Workflow
+- **Single Workflow**: One `ci.yml` handles everything
+- **Data Persistence**: Uses GitHub Actions cache for incremental syncs
+- **Direct Pages Deploy**: Deploys via `actions/deploy-pages` (no gh-pages branch)
+- **Incremental Sync**: Only fetches new/changed videos
+- **Smart Triggers**: Runs on push, schedule, and manual triggers
 
-### Day-to-Day Development
+## Workflow Triggers
+
+| Trigger | Syncs Data? | Deploys? | When |
+|---------|-------------|----------|------|
+| Push to `main` | Only if no cache | ✅ | Code changes |
+| Schedule | ✅ | ✅ | Every 6 hours |
+| Manual | ✅ (optional force) | ✅ (optional skip) | On demand |
+
+## Setup Instructions
+
+### 1. GitHub Repository Settings
+
+1. Go to **Settings** → **Pages**
+2. Under "Build and deployment":
+   - Source: **GitHub Actions** (not "Deploy from a branch")
+
+### 2. GitHub Secrets
+
+Add these secrets in **Settings** → **Secrets and variables** → **Actions**:
+
+| Secret | Description | Required |
+|--------|-------------|----------|
+| `YOUTUBE_API_KEY` | YouTube Data API v3 key | Yes |
+
+### 3. Initial Deployment
+
+For the first deployment, run a manual workflow to populate the cache:
 
 ```bash
-# 1. Work on features locally
-git checkout -b feature/new-component
-# ... make changes ...
-git add .
-git commit -m "feat: add new component"
+# Via GitHub CLI
+gh workflow run ci.yml
 
-# 2. Test locally
-pnpm dev
-
-# 3. Build locally to verify
-pnpm build
-
-# 4. Push to main
-git checkout main
-git merge feature/new-component
-git push origin main
-
-# 5. GitHub Actions automatically:
-#    - Builds your app
-#    - Deploys to gh-pages
-#    - Site updates in ~2-5 minutes
-
-# 6. NO NEED TO PULL!
-#    Your main branch never has auto-commits
+# Or via GitHub UI:
+# Actions → CI/CD Pipeline → Run workflow
 ```
 
-### Testing Sync Locally
+## Manual Workflow Options
+
+When triggering manually, you have two options:
+
+| Option | Description |
+|--------|-------------|
+| **Force sync** | Clears existing data and re-fetches everything from YouTube |
+| **Sync only** | Runs sync but skips deployment (useful for testing) |
+
+## Data Flow
+
+### Normal Push (code changes)
+```
+1. Checkout code
+2. Restore data from cache ✓
+3. Skip sync (data already cached)
+4. Build site
+5. Deploy to Pages
+```
+
+### Scheduled Run (every 6 hours)
+```
+1. Checkout code
+2. Restore data from cache ✓
+3. Run incremental sync (fetch only new videos)
+4. Save updated cache
+5. Build site
+6. Deploy to Pages
+```
+
+### First Run (no cache)
+```
+1. Checkout code
+2. No cache found
+3. Run full sync (fetch all videos)
+4. Save new cache
+5. Build site
+6. Deploy to Pages
+```
+
+## Local Development
+
+### Running Sync Locally
 
 ```bash
-# Set API key
+# Set your API key
 export YOUTUBE_API_KEY="your-key-here"
 
 # Run sync
 pnpm sync
 
-# Check generated files
-ls -la public/data/
+# Check results
 cat public/data/_sync.json
-
-# Test in development
-pnpm dev
 ```
 
-### Manual Sync Trigger
-
-Sometimes you want to sync immediately instead of waiting 3 hours:
+### Testing Build
 
 ```bash
-# Option 1: Via GitHub UI
-# Go to: Actions → "Sync YouTube Data" → "Run workflow"
+# Build the site
+pnpm build
 
-# Option 2: Via GitHub CLI
-gh workflow run sync-youtube.yml
-
-# Option 3: Push sync script change
-git commit --allow-empty -m "chore: trigger sync"
-git push
+# Preview the build
+pnpm preview
 ```
 
-### Monitoring Sync Status
-
-```bash
-# Check last sync time
-curl https://muhammadswa.github.io/Dr-Yosry-Gabr-WebApp/data/_sync.json| jq .lastSync
-
-# Check video count
-curl https://<username>.github.io/<repo>/data/_sync.json | jq .videoCount
-
-# View recent workflow runs
-gh run list --workflow=sync-youtube.yml --limit 5
-
-# View specific run logs
-gh run view <run-id> --log
-```
-
----
-
-## Advanced Configuration
-
-### Adjusting Sync Frequency
-
-Edit `.github/workflows/sync-youtube.yml`:
-
-```yaml
-on:
-  schedule:
-    - cron: '0 */6 * * *'  # Every 6 hours instead of 3
-    # - cron: '0 0 * * *'   # Daily at midnight UTC
-    # - cron: '0 */1 * * *' # Every hour (use with caution!)
-```
-
-**Cron syntax:**
-```
-┌───────────── minute (0 - 59)
-│ ┌───────────── hour (0 - 23)
-│ │ ┌───────────── day of month (1 - 31)
-│ │ │ ┌───────────── month (1 - 12)
-│ │ │ │ ┌───────────── day of week (0 - 6) (Sunday to Saturday)
-│ │ │ │ │
-* * * * *
-```
-
-**Examples:**
-- `0 */3 * * *` - Every 3 hours
-- `0 0,12 * * *` - Twice daily (midnight & noon UTC)
-- `0 0 * * 0` - Weekly on Sunday midnight
-
-### Customizing Cache Behavior
-
-In `src/lib/staticData.ts`:
-
-```typescript
-// Adjust cache size
-const MAX_CACHE_SIZE = 100  // Increase for more caching
-
-// Add selective cache bypass
-async function fetchJson<T>(path: string, bypassCache = false): Promise<T> {
-  if (!bypassCache && cache.has(path)) return cache.get(path) as T
-  // ... rest of function
-}
-```
-
-### Optimizing Build Time
-
-1. **Skip dependencies that haven't changed:**
-   ```yaml
-   - name: Setup Node.js
-     uses: actions/setup-node@v4
-     with:
-       cache: 'pnpm'  # Cache node_modules
-   ```
-
-2. **Parallel builds (if you add multiple sites):**
-   ```yaml
-   strategy:
-     matrix:
-       site: [main, blog, docs]
-   ```
-
-3. **Conditional deployment:**
-   ```yaml
-   - name: Check if rebuild needed
-     id: check
-     run: |
-       if git diff --quiet HEAD~1 src/; then
-         echo "skip=true" >> $GITHUB_OUTPUT
-       fi
-   ```
-
----
-
-## File Structure Reference
+## File Structure
 
 ```
 project/
 ├── .github/workflows/
-│   ├── sync-youtube.yml      # Data sync workflow
-│   └── deploy.yml            # Code deployment workflow
+│   └── ci.yml                # Unified CI/CD workflow
 │
-├── public/
-│   └── data/                 # Generated by sync script
-│       ├── _sync.json        # Sync metadata + cache version
-│       ├── index.json        # Site index
-│       ├── videos/           # Paginated videos
-│       │   ├── date/         # Sorted by date
-│       │   ├── oldest/       # Sorted by oldest
-│       │   └── views/        # Sorted by views
-│       ├── categories/       # By category
-│       │   ├── تفسير/
-│       │   ├── حديث/
-│       │   └── ...
-│       ├── playlists/        # By playlist
-│       │   └── <playlist-id>/
-│       ├── video/            # Individual video details
-│       │   └── <video-id>.json
-│       └── search/           # Search indices
-│           ├── manifest.json
-│           ├── chunk-1.json
-│           └── ...
+├── public/data/              # Generated data (gitignored)
+│   ├── _sync.json            # Sync metadata
+│   ├── index.json            # Site index
+│   ├── videos/               # Paginated video lists
+│   ├── video/                # Individual video details
+│   ├── playlists/            # Playlist-specific pages
+│   ├── categories/           # Category-specific pages
+│   └── search/               # Search indices
 │
 ├── scripts/
-│   └── sync.ts              # YouTube sync script
+│   └── sync.ts               # YouTube sync script
 │
-├── src/
-│   └── lib/
-│       └── staticData.ts    # Data fetching + cache-busting
-│
-└── dist/client/             # Built site (deployed to gh-pages)
-    ├── index.html
-    ├── assets/
-    ├── data/                # Copied from public/data/
-    └── .nojekyll            # Disables Jekyll
+└── src/lib/
+    └── staticData.ts         # Data fetching utilities
 ```
 
----
+## Cache Strategy
 
-## Key Concepts Summary
+### GitHub Actions Cache
+- **Key**: `youtube-data-v1-{run_id}`
+- **Path**: `public/data/`
+- **Restored on**: Every workflow run
+- **Updated after**: Successful sync
 
-### 1. Separation of Concerns
-- **`main` branch**: Your source code
-- **`gh-pages` branch**: Deployed site
-- **Never mix**: main stays clean, gh-pages is auto-managed
+### Browser Cache Busting
+- `_sync.json` is fetched fresh on every page load
+- Other JSON files include `?v={timestamp}` parameter
+- Timestamp changes when data is updated
 
-### 2. Cache-Busting Independence
-- Data version comes from `_sync.json`
-- Updates on every sync
-- Works without app rebuild
-- Single source of truth
+## Troubleshooting
 
-### 3. Efficient Syncing
-- Incremental updates when possible
-- Only fetches new videos
-- Skips deployment if no changes
-- Respects YouTube API quotas
+### "Cannot build without data" Error
 
-### 4. Browser Cache Strategy
-- `_sync.json`: Always fetched fresh (100 bytes)
-- Other JSON: Cached until version changes
-- Static assets: Long-term caching (has content hashes)
-- HTML: Short caching (SPA entry point)
+This means no cached data exists. Solutions:
+1. Run manual workflow with `Force sync` enabled
+2. Ensure `YOUTUBE_API_KEY` secret is set
 
-### 5. Workflow Coordination
-- Sync workflow: Data updates → Deploy
-- Deploy workflow: Code updates → Deploy
-- No conflicts: Both write to gh-pages safely
-- Idempotent: Safe to run multiple times
+### Sync Fails
 
----
+Check:
+1. `YOUTUBE_API_KEY` is valid and has quota
+2. YouTube Data API v3 is enabled in Google Cloud Console
+3. API key restrictions allow the API
 
-## Resources
+### Pages Not Updating
 
-- [GitHub Actions Documentation](https://docs.github.com/en/actions)
-- [GitHub Pages Documentation](https://docs.github.com/en/pages)
-- [YouTube Data API](https://developers.google.com/youtube/v3)
-- [peaceiris/actions-gh-pages](https://github.com/peaceiris/actions-gh-pages)
-- [Cache-Busting Strategies](https://css-tricks.com/strategies-for-cache-busting-css/)
+Check:
+1. **Settings** → **Pages** is set to "GitHub Actions"
+2. Workflow completed successfully
+3. Clear browser cache
 
----
+### View Workflow Logs
 
-## Support
-
-If you encounter issues:
-
-1. Check [Troubleshooting](#troubleshooting) section
-2. Review workflow logs in Actions tab
-3. Verify all secrets are set correctly
-4. Check GitHub Pages configuration
-5. Review browser DevTools Network tab
-
-**Common Commands:**
 ```bash
-# View workflow runs
-gh run list
+# List recent runs
+gh run list --limit 5
 
 # View specific run
 gh run view <run-id>
 
-# Trigger workflow
-gh workflow run sync-youtube.yml
+# View logs
+gh run view <run-id> --log
+```
 
-# Check secrets
-gh secret list
+## Adjusting Sync Schedule
+
+Edit `.github/workflows/ci.yml`:
+
+```yaml
+schedule:
+  - cron: '0 */6 * * *'  # Every 6 hours (default)
+  # - cron: '0 */3 * * *'  # Every 3 hours
+  # - cron: '0 0 * * *'    # Daily at midnight UTC
+```
+
+## Clearing the Cache
+
+If you need to force a complete re-sync:
+
+1. Go to **Actions** → **Caches** (in sidebar)
+2. Delete caches starting with `youtube-data-v1`
+3. Run workflow manually
+
+Or use GitHub CLI:
+```bash
+gh cache delete --all
+gh workflow run ci.yml
 ```

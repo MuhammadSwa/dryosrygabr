@@ -1,0 +1,217 @@
+name: CI/CD Pipeline
+
+on:
+  # Sync runs on schedule
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  
+  # Deploy runs on push to main
+  push:
+    branches: [main]
+  
+  # Manual trigger with options
+  workflow_dispatch:
+    inputs:
+      force_sync:
+        description: 'Force full YouTube sync (re-fetch all data)'
+        type: boolean
+        default: false
+      sync_only:
+        description: 'Only sync data (skip deployment)'
+        type: boolean
+        default: false
+
+# Use GitHub Pages deployment (not gh-pages branch)
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '9'
+  # Cache key for data persistence
+  DATA_CACHE_KEY: youtube-data-v1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      has_data: ${{ steps.validate.outputs.valid }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # =========================================================================
+      # DATA PERSISTENCE: Restore cached data
+      # =========================================================================
+      - name: Restore data cache
+        id: cache-data
+        uses: actions/cache/restore@v4
+        with:
+          path: public/data
+          key: ${{ env.DATA_CACHE_KEY }}
+          restore-keys: |
+            ${{ env.DATA_CACHE_KEY }}
+
+      - name: Show restored data status
+        run: |
+          if [ -f "public/data/_sync.json" ]; then
+            echo "✅ Restored cached data:"
+            cat public/data/_sync.json | jq '.'
+          else
+            echo "⚠️ No cached data found - will need full sync"
+          fi
+
+      # =========================================================================
+      # YOUTUBE SYNC: Incremental update
+      # =========================================================================
+      - name: Sync YouTube data
+        id: sync
+        if: |
+          github.event_name == 'schedule' || 
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'push' && !steps.cache-data.outputs.cache-hit)
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: |
+          echo "🔄 Running YouTube sync..."
+          
+          # Force sync if requested
+          if [ "${{ github.event.inputs.force_sync }}" = "true" ]; then
+            echo "⚠️ Force sync enabled - clearing existing data"
+            rm -rf public/data
+          fi
+          
+          # Run sync (incremental by default)
+          if pnpm sync; then
+            echo "✅ Sync completed successfully"
+            echo "synced=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Sync failed or no API key"
+            echo "synced=false" >> $GITHUB_OUTPUT
+          fi
+
+      # Save data cache after sync
+      - name: Save data cache
+        if: steps.sync.outputs.synced == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: public/data
+          key: ${{ env.DATA_CACHE_KEY }}-${{ github.run_id }}
+
+      # =========================================================================
+      # VALIDATION
+      # =========================================================================
+      - name: Validate data
+        id: validate
+        run: |
+          if [ -f "public/data/index.json" ] && [ -f "public/data/_sync.json" ]; then
+            echo "✅ Valid data found"
+            echo "valid=true" >> $GITHUB_OUTPUT
+            
+            echo "📊 Data stats:"
+            cat public/data/_sync.json | jq -r '"  Videos: \(.videoCount)\n  Playlists: \(.playlistCount)\n  Last sync: \(.lastSync)"'
+          else
+            echo "❌ No valid data found"
+            echo "valid=false" >> $GITHUB_OUTPUT
+            
+            # Fail if this is a push (deployment required) or sync_only
+            if [ "${{ github.event_name }}" = "push" ]; then
+              echo "::error::Cannot build without data. Run a manual sync with YOUTUBE_API_KEY first."
+              exit 1
+            fi
+          fi
+
+      # =========================================================================
+      # BUILD
+      # =========================================================================
+      - name: Build site
+        if: steps.validate.outputs.valid == 'true' && github.event.inputs.sync_only != 'true'
+        run: pnpm build
+
+      - name: Prepare Pages artifact
+        if: steps.validate.outputs.valid == 'true' && github.event.inputs.sync_only != 'true'
+        run: |
+          cd ./dist/client
+          
+          # Disable Jekyll
+          touch .nojekyll
+          
+          # SPA fallback routes
+          for route in study dashboard; do
+            mkdir -p "$route"
+            cp index.html "$route/index.html"
+          done
+          
+          # 404 fallback
+          cp index.html 404.html
+          
+          echo "✅ Build prepared for deployment"
+
+      - name: Upload Pages artifact
+        if: steps.validate.outputs.valid == 'true' && github.event.inputs.sync_only != 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist/client
+
+      # =========================================================================
+      # SUMMARY
+      # =========================================================================
+      - name: Job Summary
+        if: always()
+        run: |
+          echo "## 📋 Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Trigger | \`${{ github.event_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Cache hit | ${{ steps.cache-data.outputs.cache-hit && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Sync ran | ${{ steps.sync.outputs.synced == 'true' && '✅' || '⏭️' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Data valid | ${{ steps.validate.outputs.valid == 'true' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "public/data/_sync.json" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📊 Data Statistics" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+            cat public/data/_sync.json >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # =========================================================================
+  # DEPLOY: GitHub Pages (from artifact, not gh-pages branch)
+  # =========================================================================
+  deploy:
+    needs: build
+    if: |
+      needs.build.outputs.has_data == 'true' && 
+      github.event.inputs.sync_only != 'true'
+    
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -223,11 +223,6 @@ function readJson<T>(filePath: string): T | null {
   }
 }
 
-function clearDir(dir: string) {
-  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true })
-  ensureDir(dir)
-}
-
 // =============================================================================
 // SYNC LOGIC
 // =============================================================================
@@ -302,8 +297,6 @@ async function sync() {
   // Step 2: Determine what needs updating
   let needsFullSync = !existingState || existingState.playlistCount !== playlists.length
   let newVideoIds: string[] = []
-
-  const existingVideoMap = new Map(existingVideos.map(v => [v.id, v]))
 
   if (!needsFullSync && existingState) {
     // Check for new videos since last sync
@@ -408,7 +401,7 @@ async function sync() {
 async function generateStaticFiles(
   videos: Video[],
   playlists: Playlist[],
-  videoPlaylistsMap: Map<string, Array<{ playlistId: string; playlistName: string; category: string }>>
+  videoPlaylistsMap: Map<string, Array<{ playlistId: string; playlistName: string; category: string }>> = new Map()
 ) {
   // Prepare sort variations
   const byDate = [...videos]
