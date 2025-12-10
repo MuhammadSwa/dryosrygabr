@@ -16,9 +16,6 @@ export interface YouTubeVideo {
   };
   tags?: string[];
   categoryId?: string;
-  viewCount?: string;
-  likeCount?: string;
-  commentCount?: string;
   // Added: playlist context for videos
   playlistId?: string;
   playlistName?: string;

@@ -2,7 +2,7 @@ import { Show } from "solid-js"
 import { Link } from "@tanstack/solid-router"
 import type { Video } from "../../lib/staticData"
 import VideoProgressBadge from "../lessons/VideoProgressBadge"
-import { parseDuration, formatViews, formatDate } from "./utils/formatters"
+import { parseDuration, formatDate } from "./utils/formatters"
 
 interface VideoCardProps {
   video: Video
@@ -52,9 +52,6 @@ function VideoCardGrid(props: VideoCardInnerProps) {
         </h3>
         <div class="flex justify-between items-center text-sm text-emerald-400">
           <span>{formatDate(v().publishedAt)}</span>
-          <Show when={v().viewCount}>
-            <span>{formatViews(v().viewCount)} مشاهدة</span>
-          </Show>
         </div>
         <Show when={props.showProgress}>
           <VideoProgressBadge videoId={v().id} showProgress={true} showFavorite={true} showWatchLater={true} />
@@ -90,9 +87,6 @@ function VideoCardList(props: VideoCardInnerProps) {
         </Show>
         <div class="flex flex-wrap gap-3 text-sm text-emerald-300">
           <span>📅 {formatDate(v().publishedAt)}</span>
-          <Show when={v().viewCount}>
-            <span>👁️ {formatViews(v().viewCount)}</span>
-          </Show>
         </div>
         <Show when={props.showProgress}>
           <VideoProgressBadge videoId={v().id} showProgress={true} showFavorite={true} showWatchLater={true} />

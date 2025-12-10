@@ -14,15 +14,6 @@ export function parseDuration(duration?: string): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-// Format view count
-export function formatViews(views?: string): string {
-  if (!views) return "";
-  const num = parseInt(views);
-  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
-  return views;
-}
-
 // Format date in Arabic
 export function formatDate(dateString: string): string {
   const date = new Date(dateString);

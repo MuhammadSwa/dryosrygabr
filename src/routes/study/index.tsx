@@ -41,7 +41,7 @@ const searchSchema = v.object({
     ),
   ),
   view: v.optional(v.picklist(['grid', 'list'] as const)),
-  sort: v.optional(v.picklist(['date', 'oldest', 'views'] as const)),
+  sort: v.optional(v.picklist(['date', 'oldest'] as const)),
   page: v.optional(
     v.pipe(
       v.unknown(),

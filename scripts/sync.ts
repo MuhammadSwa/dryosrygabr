@@ -45,9 +45,6 @@ interface Video {
   publishedAt: string
   duration: string
   thumbnail: string
-  viewCount: string
-  likeCount?: string
-  commentCount?: string
   tags?: string[]
   playlistId?: string
   playlistName?: string
@@ -166,9 +163,6 @@ async function fetchVideoDetails(videoIds: string[]): Promise<Video[]> {
         publishedAt: item.snippet.publishedAt,
         duration: item.contentDetails.duration,
         thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url || "",
-        viewCount: item.statistics.viewCount || "0",
-        likeCount: item.statistics.likeCount,
-        commentCount: item.statistics.commentCount,
         tags: item.snippet.tags,
       })
     }
@@ -421,9 +415,6 @@ async function generateStaticFiles(
   const byOldest = [...videos].sort((a, b) =>
     new Date(a.publishedAt).getTime() - new Date(b.publishedAt).getTime()
   )
-  const byViews = [...videos].sort((a, b) =>
-    parseInt(b.viewCount || "0") - parseInt(a.viewCount || "0")
-  )
 
   const categories = [...new Set(playlists.map(p => p.category))]
 
@@ -480,7 +471,6 @@ async function generateStaticFiles(
   const sortVariants = [
     { name: "date", data: byDate },
     { name: "oldest", data: byOldest },
-    { name: "views", data: byViews },
   ]
 
   for (const { name: sort, data } of sortVariants) {
@@ -558,7 +548,6 @@ async function generateStaticFiles(
         // Include summary data for search results (avoids N+1 fetches)
         d: v.duration,
         th: v.thumbnail,
-        vc: v.viewCount,
         pa: v.publishedAt,
         pn: v.playlistName,
       })),
@@ -575,7 +564,6 @@ async function generateStaticFiles(
         t: v.title,
         d: v.duration,
         th: v.thumbnail,
-        vc: v.viewCount,
         pa: v.publishedAt,
         p: v.playlistId,
         pn: v.playlistName,
@@ -594,7 +582,6 @@ async function generateStaticFiles(
           t: v.title,
           d: v.duration,
           th: v.thumbnail,
-          vc: v.viewCount,
           pa: v.publishedAt,
         }))
       )
@@ -614,7 +601,6 @@ function generatePages(videos: Video[], dir: string, label?: string) {
       publishedAt: v.publishedAt,
       duration: v.duration,
       thumbnail: v.thumbnail,
-      viewCount: v.viewCount,
       playlistId: v.playlistId,
       playlistName: v.playlistName,
       category: v.category,

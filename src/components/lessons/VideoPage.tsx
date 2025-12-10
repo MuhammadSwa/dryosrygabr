@@ -32,14 +32,6 @@ function parseDuration(duration?: string): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-function formatViews(views?: string): string {
-  if (!views) return "";
-  const num = parseInt(views);
-  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
-  return views;
-}
-
 function formatDate(date: string): string {
   const d = new Date(date);
   return d.toLocaleDateString("ar-EG", {
@@ -112,23 +104,6 @@ export default function VideoPage(props: VideoPageProps) {
                   </svg>
                   {formatDate(props.video.publishedAt)}
                 </span>
-                <Show when={props.video.viewCount}>
-                  <span class="flex items-center gap-1">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                    {formatViews(props.video.viewCount)} مشاهدة
-                  </span>
-                </Show>
-                <Show when={props.video.likeCount}>
-                  <span class="flex items-center gap-1">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
-                    </svg>
-                    {formatViews(props.video.likeCount)}
-                  </span>
-                </Show>
                 <Show when={props.video.duration}>
                   <span class="flex items-center gap-1">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

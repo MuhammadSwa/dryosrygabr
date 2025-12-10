@@ -17,7 +17,6 @@ export interface Video {
   publishedAt: string
   duration: string
   thumbnail: string
-  viewCount: string
   playlistId?: string
   playlistName?: string
   category?: string
@@ -25,8 +24,6 @@ export interface Video {
 
 export interface VideoDetails extends Video {
   description: string
-  likeCount?: string
-  commentCount?: string
   tags?: string[]
   nav: {
     prev: string | null
@@ -168,7 +165,7 @@ export async function getIndex(): Promise<SiteIndex> {
 
 export async function getVideos(options: {
   page?: number
-  sort?: "date" | "oldest" | "views"
+  sort?: "date" | "oldest"
   category?: PlaylistCategory | "all"
   playlistId?: string
 }): Promise<VideoPage> {
@@ -214,7 +211,6 @@ interface SearchEntry {
   p?: string     // playlistId
   d?: string     // duration
   th?: string    // thumbnail
-  vc?: string    // viewCount
   pa?: string    // publishedAt
   pn?: string    // playlistName
 }
@@ -290,7 +286,6 @@ export async function search(
     publishedAt: m.pa || "",
     duration: m.d || "",
     thumbnail: m.th || "",
-    viewCount: m.vc || "0",
     playlistId: m.p,
     playlistName: m.pn,
     category: m.c,
@@ -316,7 +311,7 @@ export interface StudyHomeData {
 
 export async function loadStudyHome(options: {
   page?: number
-  sort?: "date" | "oldest" | "views"
+  sort?: "date" | "oldest"
   category?: PlaylistCategory | "all"
   playlistId?: string
 }): Promise<StudyHomeData> {
@@ -343,12 +338,12 @@ export async function loadVideoPage(videoId: string): Promise<VideoPageData | nu
   const [prevVideo, nextVideo] = await Promise.all([
     video.nav.prev ? getVideo(video.nav.prev).then(v => v ? {
       id: v.id, title: v.title, publishedAt: v.publishedAt, duration: v.duration,
-      thumbnail: v.thumbnail, viewCount: v.viewCount, playlistId: v.playlistId,
+      thumbnail: v.thumbnail, playlistId: v.playlistId,
       playlistName: v.playlistName, category: v.category,
     } : null) : Promise.resolve(null),
     video.nav.next ? getVideo(video.nav.next).then(v => v ? {
       id: v.id, title: v.title, publishedAt: v.publishedAt, duration: v.duration,
-      thumbnail: v.thumbnail, viewCount: v.viewCount, playlistId: v.playlistId,
+      thumbnail: v.thumbnail, playlistId: v.playlistId,
       playlistName: v.playlistName, category: v.category,
     } : null) : Promise.resolve(null),
   ])

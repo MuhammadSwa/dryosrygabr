@@ -1,7 +1,7 @@
 import { Show } from "solid-js";
 
 export type ViewMode = "grid" | "list";
-export type SortOption = "date" | "oldest" | "views";
+export type SortOption = "date" | "oldest";
 
 export const VIDEOS_PER_PAGE_OPTIONS = [12, 24, 48, 96];
 
@@ -68,7 +68,6 @@ export default function VideoControls(props: VideoControlsProps) {
         >
           <option value="date">الأحدث</option>
           <option value="oldest">الأقدم</option>
-          <option value="views">الأكثر مشاهدة</option>
         </select>
 
         {/* View Mode Toggle */}
