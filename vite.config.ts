@@ -6,7 +6,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { tanstackStart } from '@tanstack/solid-start/plugin/vite'
 import solidPlugin from 'vite-plugin-solid'
 
-const basePath = '/Dr-Yosry-Gabr-WebApp/'
+const basePath = 'dryosrygabr'
 
 export default defineConfig({
   base: basePath,
@@ -35,7 +35,10 @@ export default defineConfig({
       },
       // Explicitly define root page with base path
       pages: [
-        { path: basePath, prerender: { enabled: true, outputPath: '/index.html' } },
+        {
+          path: basePath,
+          prerender: { enabled: true, outputPath: '/index.html' },
+        },
       ],
     }),
     solidPlugin({ ssr: true }),
